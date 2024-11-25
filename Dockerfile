@@ -6,5 +6,6 @@ COPY requirements.txt /home/jovyan/
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.ipynb mono.ipynb pointnet2_utils.py pointnet2_ssg.py /home/jovyan/
-COPY /data/ /home/jovyan/
+COPY /notebooks/ /home/jovyan/
+COPY /include/ /home/jovyan/
+COPY main.py extract.py inference.py /home/jovyan/
