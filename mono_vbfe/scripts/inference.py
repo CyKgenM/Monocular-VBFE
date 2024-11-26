@@ -6,8 +6,10 @@ from pytorch_tcn import TCN
 from torchvision.transforms import functional as TF
 import torch.nn.functional as F
 from include.spatial import SpatialBlock as sb
+import time
 import cv2
 from main import mono
+from std_msgs.msg import Float32  # Import ROS message type
 
 device = (
     "cuda"
@@ -19,6 +21,9 @@ device = (
 
 # ROS Node Initialization
 rospy.init_node("force_feedback_node", anonymous=True)
+
+# Publisher for Force Feedback
+force_pub = rospy.Publisher("/dvrk/force_feedback", Float32, queue_size=10)
 
 # Load the TCN model
 model = TCN()
@@ -32,7 +37,6 @@ intrinsics = [833.170, 909.161, 275.833, 297.017]
 
 # GStreamer pipeline for ECM camera
 GSTREAMER_PIPELINE = "gst-launch-1.0 decklinkvideosrc ! videoconvert ! appsink"
-
 
 def preprocess_image(image):
     return TF.to_tensor(TF.resize(image, (224, 224))).unsqueeze(0)
@@ -68,13 +72,19 @@ def capture_data():
     return image, depth_to_pointcloud(depth, intrinsics)
 
 def send_force_feedback(force):
-    rospy.loginfo(f"Predicted Force Feedback: {force}")
+    # Publish the force feedback to the ROS topic
+    msg = Float32()
+    msg.data = force
+    force_pub.publish(msg)
+    rospy.loginfo(f"Published Force Feedback: {force}")
 
 # Main Loop
 if __name__ == "__main__":
     sb = sb()
     block_size = 5
     sequence_length = 15
+    rate = rospy.Rate(2)  # Adjust sampling rate (e.g., 2 Hz)
+    start_time = time.time()
     try:
         while not rospy.is_shutdown():
             image, pointcloud = capture_data()
@@ -89,6 +99,11 @@ if __name__ == "__main__":
                 force_prediction = torch.cat(outputs, dim=2)
             for o in outputs:
                 send_force_feedback(o.item())
-                rospy.sleep(0.5)  # Adjust sampling rate
+                actual_time = time.time() - start_time
+                t = Float32()
+                t.data = actual_time
+                force_pub.publish(t)
+                rospy.loginfo(f"Time spent doing so: {actual_time} s")
+                rate.sleep()  # Maintain consistent publishing rate
     except rospy.ROSInterruptException:
         rospy.loginfo("Force feedback node shutting down.")
