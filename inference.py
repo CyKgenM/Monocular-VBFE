@@ -3,9 +3,6 @@
 import torch
 import rospy
 from pytorch_tcn import TCN
-#import time
-import dvrk
-import crtk
 from torchvision.transforms import functional as TF
 import torch.nn.functional as F
 from include.spatial import SpatialBlock as sb
@@ -36,13 +33,6 @@ intrinsics = [833.170, 909.161, 275.833, 297.017]
 # GStreamer pipeline for ECM camera
 GSTREAMER_PIPELINE = "gst-launch-1.0 decklinkvideosrc ! videoconvert ! appsink"
 
-# ROS Abstraction Layer
-ral = crtk.ral("dvrk_python_node")
-ral.check_connections()
-ral.spin()
-
-# Initialize dVRK PSM1
-psm1 = dvrk.psm("PSM1")
 
 def preprocess_image(image):
     return TF.to_tensor(TF.resize(image, (224, 224))).unsqueeze(0)
@@ -78,7 +68,6 @@ def capture_data():
     return image, depth_to_pointcloud(depth, intrinsics)
 
 def send_force_feedback(force):
-    psm1.set_gripper_effort(force)
     rospy.loginfo(f"Predicted Force Feedback: {force}")
 
 # Main Loop
