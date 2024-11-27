@@ -172,7 +172,7 @@ class RPC_Dataset(Dataset):
 
 
 # Initialize the dataset
-'''
+
 train_image_dir = 'frame/ECM_frames/left'
 train_forces = 'frame/ECM_frames/labels.csv'
 
@@ -185,7 +185,7 @@ train_forces = 'frame/ECM_frames/debug.csv'
 
 test_image_dir = 'frame/ECM_frames/right_test'
 test_forces = 'frame/ECM_frames/debug_test.csv'
-
+'''
 train_dataset = RPC_Dataset(train_image_dir, train_forces)
 test_dataset = RPC_Dataset(test_image_dir, test_forces)
 #augmented_test_dataset = RPC_Dataset(test_image_dir, test_pointcloud_dir, test_forces, image_transform=rgb_augment, pointcloud_transform=pc_augment)
@@ -202,14 +202,6 @@ train_dataloader = DataLoader(train_dataset, batch_size=5, shuffle=True)
 test_dataloader = DataLoader(test_dataset, batch_size=5, shuffle=False)
 
 '''
-for batch in train_dataloader:
-    cats, labels = batch  # Unpack all three: images, pointclouds, and labels
-    print("Cats batch size:", cats.size())
-    #print("Pointcloud batch size:", pointclouds.size())
-    print("Labels:", labels)
-    break
-'''
-
 class RPC_TCN(nn.Module):
     def __init__(self, input_size=4608, output_size=1, num_channels=[64, 128, 256], kernel_size=3, dropout=0.3):
         super(RPC_TCN, self).__init__()
@@ -219,20 +211,19 @@ class RPC_TCN(nn.Module):
     def forward(self, cat_input):   
         # TB forward prop 
         #cat_input = cat_input.unsqueeze(0) # Only when batch_size = 1
-        print(cat_input.size())
-        cat_input = cat_input.transpose(0, 1)
-        print(cat_input.size())
         cat_input = cat_input.transpose(1, -1)
-        print(cat_input.size())
+        #print(cat_input.size())
         
         force = self.tcn(cat_input)  # Apply TCN layer
         #print(force.size())
-        force = F.relu(force[:, :, -1])
-        #force = F.softplus(force[:, :, -1])
+        force = F.softplus(force[:, :, -1])
         
         return force
 
-model = RPC_TCN().to(device)
+'''
+model = TCN(4608, [64, 128, 256], kernel_size=3, dropout=0.3, use_norm='batch_norm', output_projection=1).to(device)
+
+#model = RPC_TCN().to(device)
 #print(model)
 
 # Mean Squared Error
@@ -240,9 +231,10 @@ loss_fn = nn.MSELoss()
 #loss_fn = nn.SmoothL1Loss() # MAE used instead of MSE on critical losses to prevent gradient explosion
 #loss_fn = nn.L1Loss()
 #optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=1e-4)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-5)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
 #optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9, weight_decay=1e-5)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=25, eta_min=1e-6)
+#scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=25, eta_min=1e-6)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=25, T_mult=1)
 
 
 
@@ -253,11 +245,11 @@ def train(dataloader, model, loss_fn, optimizer):
         #torch.cuda.empty_cache()
         cats, f = cats.float(), f.float()
         cats, f, = cats.to(device), f.to(device)
-        #f = f * 0.001
         #print(f)
         
         # Compute prediction error
-        pred = model(cats)
+        cats = cats.transpose(1, -1)
+        pred = F.softplus(model(cats)[:, :, -1])
         pred = pred.squeeze(0)
         pred = pred.squeeze(-1)
         #print(pred.size())
@@ -269,7 +261,7 @@ def train(dataloader, model, loss_fn, optimizer):
         optimizer.step()
         optimizer.zero_grad()
 
-        if batch % 1 == 0:
+        if batch % 25 == 0:
             loss, current = loss.item(), (batch + 1) * len(cats)
             print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
@@ -279,8 +271,6 @@ def test(dataloader, model, loss_fn):
     num_batches = len(dataloader)
     model.eval()
     total_absolute_error, test_loss = 0, 0
-    deviation = []
-    ground_truth = []
     
     with torch.no_grad():
         for cats, f in dataloader:
@@ -288,7 +278,8 @@ def test(dataloader, model, loss_fn):
             cats, f, = cats.to(device), f.to(device)
             
             # Forward pass: Compute predictions
-            pred = model(cats)
+            cats = cats.transpose(1, -1)
+            pred = F.softplus(model(cats)[:, :, -1])
             pred = pred.squeeze(0)  # Ensure correct shape if necessary
             pred = pred.squeeze(-1)
             #print(pred.size())
@@ -314,43 +305,45 @@ epochs = 50
 abs_err = []
 avg_err = []
 
-for t in range(epochs):
-    torch.cuda.empty_cache()
-    print(f"Epoch {t+1}\n-------------------------------")
-    train(train_dataloader, model, loss_fn, optimizer)
-    mae, mse = test(test_dataloader, model, loss_fn)
-    avg_err.append(mse)
-    abs_err.append(mae)
-    if (t + 1) % 5 == 0:
+try:
+    for t in range(epochs):
+        torch.cuda.empty_cache()
+        print(f"Epoch {t+1}\n-------------------------------")
+        train(train_dataloader, model, loss_fn, optimizer)
+        mae, mse = test(test_dataloader, model, loss_fn)
+        avg_err.append(mse)
+        abs_err.append(mae)
         scheduler.step()
-print("Done!")
-
-torch.save(model.state_dict(), "model.pth")
-torch.cuda.empty_cache()
-print("Saved PyTorch Model State to model.pth")
-
-epoch_ls = list(range(1, epochs + 1))
-
-# Plot MAE and MSE
-plt.figure(figsize=(10, 6))  # Set the figure size
-
-# Plot MAE
-plt.plot(epoch_ls, abs_err, label='Mean Absolute Error (MAE)', color='blue', marker='o')
-
-# Plot MSE
-plt.plot(epoch_ls, avg_err, label='Mean Squared Error (MSE)', color='green', marker='x')
-
-# Add titles and labels
-plt.title('Training Errors Over Epochs', fontsize=16)
-plt.xlabel('Epoch', fontsize=14)
-plt.ylabel('Error', fontsize=14)
-
-# Add a legend
-plt.legend(fontsize=12)
-
-# Show grid for better readability
-plt.grid(True)
-
-# Display the plot
-#plt.show()
-plt.savefig('training_errors.png', dpi=300)
+    print("Done!")
+except KeyboardInterrupt():
+    pass
+finally:
+    torch.save(model.state_dict(), "model.pth")
+    torch.cuda.empty_cache()
+    print("Saved PyTorch Model State to model.pth")
+    
+    epoch_ls = list(range(1, epochs + 1))
+    
+    # Plot MAE and MSE
+    plt.figure(figsize=(10, 6))  # Set the figure size
+    
+    # Plot MAE
+    plt.plot(epoch_ls, abs_err, label='Mean Absolute Error (MAE)', color='blue', marker='o')
+    
+    # Plot MSE
+    plt.plot(epoch_ls, avg_err, label='Mean Squared Error (MSE)', color='green', marker='x')
+    
+    # Add titles and labels
+    plt.title('Training Errors Over Epochs', fontsize=16)
+    plt.xlabel('Epoch', fontsize=14)
+    plt.ylabel('Error', fontsize=14)
+    
+    # Add a legend
+    plt.legend(fontsize=12)
+    
+    # Show grid for better readability
+    plt.grid(True)
+    
+    # Display the plot
+    #plt.show()
+    plt.savefig('training_errors.png', dpi=300)

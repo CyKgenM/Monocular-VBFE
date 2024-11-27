@@ -9,7 +9,9 @@ from include.spatial import SpatialBlock as sb
 import time
 import cv2
 from main import mono
-from std_msgs.msg import Float32  # Import ROS message type
+import serial
+import matplotlib.pyplot as plt
+from std_msgs.msg import Float32
 
 device = (
     "cuda"
@@ -34,6 +36,9 @@ model.reset_buffers()
 # Load Metric3D model
 metric3d = torch.hub.load("yvanyin/metric3d", "metric3d_vit_small", pretrain=True)
 intrinsics = [833.170, 909.161, 275.833, 297.017]
+
+port = '/dev/ttyUSB0'
+ser = serial.Serial(port, baudrate=115200)
 
 # GStreamer pipeline for ECM camera
 GSTREAMER_PIPELINE = "gst-launch-1.0 decklinkvideosrc ! videoconvert ! appsink"
@@ -85,6 +90,7 @@ if __name__ == "__main__":
     sequence_length = 15
     rate = rospy.Rate(2)  # Adjust sampling rate (e.g., 2 Hz)
     start_time = time.time()
+    errors = []
     try:
         while not rospy.is_shutdown():
             image, pointcloud = capture_data()
@@ -104,6 +110,21 @@ if __name__ == "__main__":
                 t.data = actual_time
                 force_pub.publish(t)
                 rospy.loginfo(f"Time spent doing so: {actual_time} s")
+                measurement = float(ser.readline().decode().strip())
+                abs_err = abs(measurement - o.item())
+                errors.append(abs_err)
+                print(f"Validation Error: {abs_err}")
                 rate.sleep()  # Maintain consistent publishing rate
     except rospy.ROSInterruptException:
         rospy.loginfo("Force feedback node shutting down.")
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(outputs), errors, label='Absolute Error', color='red', marker='o')
+    plt.title('Validation Error', fontsize=16)
+    plt.xlabel('Predictions', fontsize=14)
+    plt.ylabel('Error', fontsize=14)
+
+    plt.legend(fontsize=12)
+    plt.grid(True)
+    plt.show()
+    plt.savefig('validation_err.png', dpi=300)
