@@ -41,7 +41,10 @@ port = '/dev/ttyUSB0'
 ser = serial.Serial(port, baudrate=115200)
 
 # GStreamer pipeline for ECM camera
-GSTREAMER_PIPELINE = "gst-launch-1.0 decklinkvideosrc ! videoconvert ! appsink"
+GSTREAMER_PIPELINE = """
+gst-launch-1.0 decklinkvideosrc mode=pal device-number=0 ! 
+videorate ! video/x-raw,framerate=30/1 ! 
+videoconvert ! jpegenc quality=100 ! appsink"""
 
 def preprocess_image(image):
     return TF.to_tensor(TF.resize(image, (224, 224))).unsqueeze(0)
@@ -88,7 +91,7 @@ if __name__ == "__main__":
     sb = sb()
     block_size = 5
     sequence_length = 15
-    rate = rospy.Rate(2)  # Adjust sampling rate (e.g., 2 Hz)
+    rate = rospy.Rate(6)  # 6 Hz
     start_time = time.time()
     errors = []
     try:
@@ -113,18 +116,19 @@ if __name__ == "__main__":
                 measurement = float(ser.readline().decode().strip())
                 abs_err = abs(measurement - o.item())
                 errors.append(abs_err)
-                print(f"Validation Error: {abs_err}")
+                print(f"Validation Error: {abs_err} N \nTime spent doing so: {actual_time} s")
                 rate.sleep()
     except rospy.ROSInterruptException:
         rospy.loginfo("Force feedback node shutting down.")
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(outputs), errors, label='Absolute Error', color='red', marker='o')
-    plt.title('Validation Error', fontsize=16)
-    plt.xlabel('Predictions', fontsize=14)
-    plt.ylabel('Error', fontsize=14)
+    finally:
+        ser.close()
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(outputs), errors, label='Absolute Error', color='red', marker='o')
+        plt.title('Validation Error', fontsize=16)
+        plt.xlabel('Predictions', fontsize=14)
+        plt.ylabel('Error', fontsize=14)
 
-    plt.legend(fontsize=12)
-    plt.grid(True)
-    plt.show()
-    plt.savefig('validation_err.png', dpi=300)
+        plt.legend(fontsize=12)
+        plt.grid(True)
+        plt.show()
+        plt.savefig('validation_err.png', dpi=300)
