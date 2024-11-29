@@ -114,7 +114,7 @@ if __name__ == "__main__":
                 abs_err = abs(measurement - o.item())
                 errors.append(abs_err)
                 print(f"Validation Error: {abs_err}")
-                rate.sleep()  # Maintain consistent publishing rate
+                rate.sleep()
     except rospy.ROSInterruptException:
         rospy.loginfo("Force feedback node shutting down.")
     
