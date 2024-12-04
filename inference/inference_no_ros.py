@@ -525,7 +525,7 @@ if __name__ == "__main__":
                     delays.append(actual_time)
                     print(f"Validation Error: {abs_err} N \nTime spent doing so: {actual_time} s")
                 
-            time.sleep(0.5)
+                time.sleep(0.5)
     except KeyboardInterrupt or Exception as e:
         running = False
         if e:
