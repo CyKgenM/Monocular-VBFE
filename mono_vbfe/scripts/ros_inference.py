@@ -288,7 +288,7 @@ if __name__ == "__main__":
                 processed_image = preprocess_image(image)
                 processed_pointcloud = torch.tensor(pointcloud.transpose(0, 1), dtype=torch.float32).unsqueeze(0)
                 with torch.no_grad():
-                    features = sb(processed_image, processed_pointcloud)
+                    features = sb(processed_image, processed_pointcloud).unsqueeze(0)
                     buff.append(features)
 
             buff = torch.stack(buff, dim=-1)

@@ -39,7 +39,7 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from torchvision.transforms import v2
 from torchvision.io import read_image, ImageReadMode
 import torch.nn.functional as F
-from include.spatial import SpatialBlock as sb
+from include import sb
 from pytorch_tcn import TCN
 
 
@@ -278,7 +278,7 @@ def train(dataloader, model, loss_fn, optimizer):
         
         # Compute prediction error
         cats = cats.transpose(1, -1)
-        pred = F.softplus(model(cats)[:, :, -1])
+        pred = abs(model(cats)[:, :, -1])
         pred = pred.squeeze(0)
         pred = pred.squeeze(-1)
         #print(pred.size())
@@ -308,7 +308,7 @@ def test(dataloader, model, loss_fn):
             
             # Forward pass: Compute predictions
             cats = cats.transpose(1, -1)
-            pred = F.softplus(model(cats)[:, :, -1])
+            pred = abs(model(cats)[:, :, -1])
             pred = pred.squeeze(0)  # Ensure correct shape if necessary
             pred = pred.squeeze(-1)
             #print(pred.size())
@@ -333,7 +333,7 @@ def test(dataloader, model, loss_fn):
 epochs = 50
 abs_err = []
 avg_err = []
-
+actual_ep = 0
 try:
     for t in range(epochs):
         torch.cuda.empty_cache()
@@ -343,6 +343,7 @@ try:
         avg_err.append(mse)
         abs_err.append(mae)
         scheduler.step()
+        actual_ep += 1
     print("Done!")
 except KeyboardInterrupt():
     pass
@@ -351,7 +352,7 @@ finally:
     torch.cuda.empty_cache()
     print("Saved PyTorch Model State to model.pth")
     
-    epoch_ls = list(range(1, epochs + 1))
+    epoch_ls = list(range(1, actual_ep + 1))
     
     # Plot MAE and MSE
     plt.figure(figsize=(10, 6))  # Set the figure size
